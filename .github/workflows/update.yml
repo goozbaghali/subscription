@@ -1,0 +1,65 @@
+name: Update Subscription
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install Tools
+        run: |
+          sudo apt update
+          sudo apt install -y curl jq
+
+      - name: Merge & Clean Subs
+        run: |
+
+          rm -f merged.txt
+          touch merged.txt
+
+          while read line; do
+
+            echo "Fetching $line"
+
+            content=$(curl -L --max-time 20 -s "$line")
+
+            if [ -z "$content" ]; then
+              echo "Bad source skipped"
+              continue
+            fi
+
+            decoded=$(echo "$content" | base64 -d 2>/dev/null)
+
+            if [ -n "$decoded" ]; then
+              echo "$decoded" >> merged.txt
+            else
+              echo "$content" >> merged.txt
+            fi
+
+            echo "" >> merged.txt
+
+          done < sources.txt
+
+          grep -E '^(vmess|vless|trojan|ss|ssr)://' merged.txt > clean.txt
+
+          awk '!seen[$0]++' clean.txt > unique.txt
+
+          mv unique.txt sub.txt
+
+      - name: Commit Changes
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+
+          git add sub.txt
+
+          git commit -m "Auto Update Subscription" || exit 0
+
+          git push
